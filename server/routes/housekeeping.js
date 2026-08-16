@@ -1,0 +1,13 @@
+const router=require('express').Router();
+const asyncHandler=require('../utils/asyncHandler');
+const auth=require('../middleware/auth');
+const tenant=require('../middleware/tenant');
+const permit=require('../middleware/permit');
+const {HousekeepingTask,Room}=require('../models/core');
+const audit=require('../utils/audit');
+const {scoped,enforceWriteScope}=require('../utils/scope');
+router.use(auth,tenant);
+router.get('/',permit('housekeeping.view'),asyncHandler(async(req,res)=>res.json(await HousekeepingTask.find(scoped(req)).populate('room assignedTo supervisor').sort({createdAt:-1}))));
+router.post('/',permit('housekeeping.*'),asyncHandler(async(req,res)=>{const t=await HousekeepingTask.create(enforceWriteScope(req,req.body));await audit(req,{action:'CREATE',module:'housekeeping',entityType:'HousekeepingTask',entityId:t._id,newValue:t});res.status(201).json(t)}));
+router.patch('/:id',permit('housekeeping.update'),asyncHandler(async(req,res)=>{const q=scoped(req,{_id:req.params.id});const t=await HousekeepingTask.findOne(q);if(!t)return res.status(404).json({message:'Task not found'});if(req.body.status==='Inspected'&&!['housekeeping_supervisor','general_manager','system_admin','saas_super_admin','regional_corporate_admin'].includes(req.user.role))return res.status(403).json({message:'Supervisor permission required for inspection'});Object.assign(t,req.body);if(req.body.status==='Cleaning'&&!t.startedAt)t.startedAt=new Date();if(req.body.status==='Clean')t.completedAt=new Date();if(req.body.status==='Inspected'){t.inspectedAt=new Date();t.supervisor=req.user._id;}await t.save();if(req.body.status==='Clean')await Room.findOneAndUpdate(scoped(req,{_id:t.room}),{status:'Vacant Clean'});if(req.body.status==='Inspected')await Room.findOneAndUpdate(scoped(req,{_id:t.room}),{status:'Inspected'});await audit(req,{action:'UPDATE',module:'housekeeping',entityType:'HousekeepingTask',entityId:t._id,newValue:t});res.json(t)}));
+module.exports=router;

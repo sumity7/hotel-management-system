@@ -1,0 +1,1 @@
+module.exports=function(req,res,next){if(req.user?.role!=='saas_super_admin')req.organizationFilter={organization:req.user.organization};else req.organizationFilter={}; if(req.propertyId)req.propertyFilter={property:req.propertyId}; else req.propertyFilter={}; next();};

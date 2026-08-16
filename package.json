@@ -1,0 +1,19 @@
+{
+  "name": "hotel-management-system-premium-enterprise-v12",
+  "private": true,
+  "version": "12.2.0",
+  "scripts": {
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "seed": "npm --prefix server run seed",
+    "build": "npm --prefix client run build",
+    "smoke:1-20": "node scripts/smoke-1-20.js",
+    "smoke:modules": "node scripts/smoke-all-modules.js",
+    "verify:static": "node scripts/preflight.js",
+    "smoke:runtime": "node scripts/runtime-smoke-v12.js",
+    "verify:api-contract": "node scripts/api-contract-v12.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

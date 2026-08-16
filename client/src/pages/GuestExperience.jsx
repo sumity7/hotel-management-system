@@ -1,0 +1,22 @@
+import React,{useState}from'react';
+import{useQuery,useQueryClient}from'@tanstack/react-query';
+import{api}from'../api';
+import{Page,Card,Empty,Badge}from'../components';
+export default function GuestExperience(){
+ const qc=useQueryClient(),[q,setQ]=useState(''),[selected,setSelected]=useState(null),[history,setHistory]=useState(null),[points,setPoints]=useState(100),[message,setMessage]=useState('Please send two towels to my room'),[concierge,setConcierge]=useState(null),[error,setError]=useState('');
+ const{data:guests=[]}=useQuery({queryKey:['crm-guests',q],queryFn:()=>api.get('/commercial/guests',{params:{q}}).then(r=>r.data)});
+ const{data:requests=[]}=useQuery({queryKey:['service-requests'],queryFn:()=>api.get('/modules/service-requests').then(r=>r.data)});
+ async function load(g){setSelected(g);setError('');try{setHistory((await api.get(`/commercial/guests/${g._id}/history`)).data)}catch(e){setError(e.response?.data?.message||e.message)}}
+ async function earn(){if(!selected)return;await api.post(`/commercial/loyalty/${selected._id}/earn`,{points,description:'Manual test earn'});await load(selected)}
+ async function redeem(){if(!selected)return;try{await api.post(`/commercial/loyalty/${selected._id}/redeem`,{points,description:'Manual test redemption'});await load(selected)}catch(e){setError(e.response?.data?.message||e.message)}}
+ async function ask(){try{const{data}=await api.post('/commercial/concierge',{message,guestId:selected?._id});setConcierge(data);qc.invalidateQueries({queryKey:['service-requests']})}catch(e){setError(e.response?.data?.message||e.message)}}
+ async function resolve(r){await api.patch(`/commercial/service-requests/${r._id}`,{status:'Resolved',resolution:'Completed and confirmed by staff'});qc.invalidateQueries({queryKey:['service-requests']})}
+ return <Page title="Guest CRM & Digital Journey" subtitle="Requirements 14–20: guest 360, history, loyalty, service recovery, automated journey, upsell foundation and AI concierge">
+ {error&&<div className="card"><b>Error:</b> {error}</div>}
+ <div className="grid2"><Card title="Guest Profiles / CRM"><div className="formGrid"><input placeholder="Search name, phone, email or loyalty #" value={q} onChange={e=>setQ(e.target.value)}/></div><div className="miniList">{guests.map(g=><button className="listButton" key={g._id} onClick={()=>load(g)}><b>{g.fullName}</b><span>{g.phone||g.email||'No contact'} · {(g.tags||[]).join(', ')}</span></button>)}{!guests.length&&<Empty/>}</div></Card>
+ <Card title="Guest 360 / History">{history?<><h3>{history.guest.fullName}</h3><div className="statsInline"><span>Stays <b>{history.guest.stats?.totalStays||0}</b></span><span>Nights <b>{history.guest.stats?.totalNights||0}</b></span><span>Spend <b>₹{Number(history.guest.stats?.lifetimeSpend||0).toLocaleString()}</b></span></div><p>Preferences: {history.guest.preferences?.food||'—'} · Tags: {(history.guest.tags||[]).join(', ')||'—'}</p><div className="miniList">{history.reservations.map(r=><div key={r._id}><b>{r.confirmationNumber}</b> · {new Date(r.checkIn).toLocaleDateString()} → {new Date(r.checkOut).toLocaleDateString()} · <Badge>{r.status}</Badge></div>)}</div></>:<Empty text="Select a guest to view chain-ready history"/>}</Card>
+ <Card title="Loyalty Earn / Redeem"><p>Use a selected guest to validate loyalty transactions and balance checks.</p><div className="formGrid"><input type="number" value={points} onChange={e=>setPoints(Number(e.target.value))}/><button onClick={earn} disabled={!selected}>Earn points</button><button onClick={redeem} disabled={!selected}>Redeem points</button></div></Card>
+ <Card title="AI Concierge / Service Routing"><textarea rows="4" value={message} onChange={e=>setMessage(e.target.value)}/><button className="primary" onClick={ask}>Send request</button>{concierge&&<div className="resultBox"><b>{concierge.answer}</b>{concierge.serviceRequest&&<p>Operational ticket: {concierge.serviceRequest._id}</p>}</div>}</Card></div>
+ <Card title="Service Requests & Complaints"><div className="tableWrap"><table><thead><tr><th>Category</th><th>Department</th><th>Priority</th><th>Status</th><th>Description</th><th>Action</th></tr></thead><tbody>{requests.slice(0,30).map(r=><tr key={r._id}><td>{r.category}</td><td>{r.department}</td><td>{r.priority}</td><td><Badge>{r.status}</Badge></td><td>{r.description}</td><td>{r.status!=='Resolved'&&<button onClick={()=>resolve(r)}>Resolve</button>}</td></tr>)}</tbody></table>{!requests.length&&<Empty/>}</div></Card>
+ </Page>
+}

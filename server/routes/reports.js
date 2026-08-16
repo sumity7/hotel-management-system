@@ -1,0 +1,11 @@
+const router=require('express').Router();
+const asyncHandler=require('../utils/asyncHandler');
+const auth=require('../middleware/auth');
+const tenant=require('../middleware/tenant');
+const permit=require('../middleware/permit');
+const {Room,Reservation,Folio,Guest}=require('../models/core');
+const {scoped}=require('../utils/scope');
+router.use(auth,tenant);
+router.get('/daily',permit('reports.view'),asyncHandler(async(req,res)=>{const p=req.propertyId;if(!p)return res.status(400).json({message:'Property context required'});const date=req.query.date?new Date(req.query.date):new Date();const start=new Date(date.getFullYear(),date.getMonth(),date.getDate()),end=new Date(start.getTime()+86400000);const [rooms,reservations,folios]=await Promise.all([Room.find(scoped(req)),Reservation.find(scoped(req,{$or:[{checkIn:{$gte:start,$lt:end}},{checkOut:{$gte:start,$lt:end}},{status:'in-house'}]})).populate('guest room'),Folio.find(scoped(req,{updatedAt:{$gte:start,$lt:end}}))]);const revenue=folios.reduce((s,f)=>s+f.items.reduce((x,i)=>x+(i.amount||0)+(i.tax||0)-(i.discount||0),0),0);res.json({businessDate:start,roomCount:rooms.length,occupancy:rooms.length?rooms.filter(r=>String(r.status).startsWith('Occupied')).length/rooms.length*100:0,arrivals:reservations.filter(r=>r.checkIn>=start&&r.checkIn<end),departures:reservations.filter(r=>r.checkOut>=start&&r.checkOut<end),inHouse:reservations.filter(r=>r.status==='in-house'),revenue})}));
+router.get('/guest-history/:guestId',permit('reports.view'),asyncHandler(async(req,res)=>{const guest=await Guest.findOne(scoped(req,{_id:req.params.guestId}));if(!guest)return res.status(404).json({message:'Guest not found'});const stays=await Reservation.find(scoped(req,{guest:req.params.guestId})).populate('room roomType').sort({checkIn:-1});res.json({guest,stays})}));
+module.exports=router;

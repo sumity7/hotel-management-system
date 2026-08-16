@@ -1,0 +1,15 @@
+const router=require('express').Router();
+const asyncHandler=require('../utils/asyncHandler');
+const auth=require('../middleware/auth');
+const tenant=require('../middleware/tenant');
+const permit=require('../middleware/permit');
+const {Room,RoomType}=require('../models/core');
+const audit=require('../utils/audit');
+const {scoped,enforceWriteScope}=require('../utils/scope');
+router.use(auth,tenant);
+router.get('/types',permit('rooms.view'),asyncHandler(async(req,res)=>res.json(await RoomType.find(scoped(req)).sort('name'))));
+router.post('/types',permit('rooms.*'),asyncHandler(async(req,res)=>{const x=await RoomType.create(enforceWriteScope(req,req.body));await audit(req,{action:'CREATE',module:'rooms',entityType:'RoomType',entityId:x._id,newValue:x});res.status(201).json(x)}));
+router.get('/',permit('rooms.view'),asyncHandler(async(req,res)=>res.json(await Room.find(scoped(req)).populate('roomType').sort({number:1}))));
+router.post('/',permit('rooms.*'),asyncHandler(async(req,res)=>{const x=await Room.create(enforceWriteScope(req,req.body));await audit(req,{action:'CREATE',module:'rooms',entityType:'Room',entityId:x._id,newValue:x});res.status(201).json(x)}));
+router.patch('/:id',permit('rooms.*'),asyncHandler(async(req,res)=>{const q=scoped(req,{_id:req.params.id});const old=await Room.findOne(q);if(!old)return res.status(404).json({message:'Room not found'});const update={...req.body};delete update.organization;delete update.property;const x=await Room.findOneAndUpdate(q,update,{new:true,runValidators:true});await audit(req,{action:'UPDATE',module:'rooms',entityType:'Room',entityId:x._id,oldValue:old,newValue:x});res.json(x)}));
+module.exports=router;

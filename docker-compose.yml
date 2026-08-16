@@ -1,0 +1,23 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes: ["mongo_data:/data/db"]
+  server:
+    build: ./server
+    environment:
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/hotel_management_enterprise
+      - JWT_SECRET=change-me-in-production
+      - CLIENT_URL=http://localhost:5173
+    ports: ["5000:5000"]
+    depends_on: [mongo]
+  client:
+    build: ./client
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+    ports: ["5173:80"]
+    depends_on: [server]
+volumes:
+  mongo_data:
