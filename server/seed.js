@@ -18,7 +18,6 @@ const {
 } = require('./models/core');
 
 const ent = require('./models/enterprise');
-
 const { v4: uuid } = require('uuid');
 
 const cfg = {
@@ -88,16 +87,249 @@ const cfg = {
 
   /*
   ============================================================
-  RESET DATABASE
+  SAFE SEED MODE
   ============================================================
   */
 
-  for (
-    const model of Object.values(
-      require('mongoose').models
-    )
-  ) {
-    await model.deleteMany({});
+  const forceReset =
+    String(process.env.SEED_RESET || '')
+      .toLowerCase() === 'true';
+
+  if (forceReset) {
+    console.log(
+      'WARNING: SEED_RESET=true -> clearing database collections...'
+    );
+
+    for (
+      const model of Object.values(
+        require('mongoose').models
+      )
+    ) {
+      await model.deleteMany({});
+    }
+
+    console.log(
+      'Database reset complete. Rebuilding demo data...'
+    );
+  } else {
+    const existingProperty =
+      await Property.findOne({
+        code: cfg.propertyCode,
+      });
+
+    if (existingProperty) {
+      console.log(
+        `Existing property ${cfg.propertyCode} found.`
+      );
+
+      console.log(
+        'Running SAFE production seed...'
+      );
+
+      const ensureUser = async ({
+        name,
+        email,
+        password,
+        role,
+        department,
+      }) => {
+        const normalizedEmail =
+          String(email)
+            .trim()
+            .toLowerCase();
+
+        let user =
+          await User.findOne({
+            email: normalizedEmail,
+          });
+
+        if (!user) {
+          user = new User({
+            organization:
+              existingProperty.organization,
+
+            properties: [
+              existingProperty._id,
+            ],
+
+            name,
+            email: normalizedEmail,
+            password,
+            role,
+
+            ...(department
+              ? { department }
+              : {}),
+          });
+        } else {
+          user.organization =
+            existingProperty.organization;
+
+          const currentProperties =
+            Array.isArray(user.properties)
+              ? user.properties
+              : [];
+
+          const alreadyHasProperty =
+            currentProperties.some(
+              (id) =>
+                String(id) ===
+                String(existingProperty._id)
+            );
+
+          if (!alreadyHasProperty) {
+            user.properties = [
+              ...currentProperties,
+              existingProperty._id,
+            ];
+          }
+
+          user.name = name;
+          user.email = normalizedEmail;
+          user.password = password;
+          user.role = role;
+
+          if (department) {
+            user.department = department;
+          }
+        }
+
+        await user.save();
+
+        console.log(
+          `Login ready: ${normalizedEmail}`
+        );
+      };
+
+      await ensureUser({
+        name: 'SaaS Super Admin',
+        email: cfg.adminEmail,
+        password: cfg.adminPassword,
+        role: 'saas_super_admin',
+        department: 'IT',
+      });
+
+      await ensureUser({
+        name: 'Front Desk Demo',
+        email: cfg.frontDeskEmail,
+        password: cfg.frontDeskPassword,
+        role: 'front_desk',
+        department: 'Front Desk',
+      });
+
+      const demoUsers = [
+        {
+          name: 'Housekeeping Demo',
+          email: 'housekeeping@hms.local',
+          password: 'Housekeeping@123',
+          role: 'housekeeping_supervisor',
+          department: 'Housekeeping',
+        },
+        {
+          name: 'Finance Demo',
+          email: 'finance@hms.local',
+          password: 'Finance@123',
+          role: 'finance',
+          department: 'Finance',
+        },
+        {
+          name: 'Revenue Demo',
+          email: 'revenue@hms.local',
+          password: 'Revenue@123',
+          role: 'revenue_manager',
+          department: 'Revenue',
+        },
+        {
+          name: 'Engineering Demo',
+          email: 'engineering@hms.local',
+          password: 'Engineering@123',
+          role: 'engineering',
+          department: 'Engineering',
+        },
+        {
+          name: 'Restaurant Demo',
+          email: 'restaurant@hms.local',
+          password: 'Restaurant@123',
+          role: 'fnb_cashier_waiter',
+          department: 'F&B',
+        },
+        {
+          name: 'Kitchen Demo',
+          email: 'kitchen@hms.local',
+          password: 'Kitchen@123',
+          role: 'kitchen_staff',
+          department: 'Kitchen',
+        },
+        {
+          name: 'General Manager',
+          email: 'gm@hms.local',
+          password: 'Manager@123',
+          role: 'general_manager',
+          department: 'Management',
+        },
+        {
+          name: 'Sales & Events',
+          email: 'sales@hms.local',
+          password: 'Sales@123',
+          role: 'sales_events',
+          department: 'Sales',
+        },
+        {
+          name: 'Cashier Demo',
+          email: 'cashier@hms.local',
+          password: 'Cashier@123',
+          role: 'cashier',
+          department: 'Finance',
+        },
+        {
+          name: 'System Admin',
+          email: 'system@hms.local',
+          password: 'System@123',
+          role: 'system_admin',
+          department: 'IT',
+        },
+      ];
+
+      for (const data of demoUsers) {
+        await ensureUser(data);
+      }
+
+      console.log('');
+      console.log(
+        '========================================'
+      );
+      console.log(
+        'SAFE PRODUCTION SEED COMPLETE'
+      );
+      console.log(
+        '========================================'
+      );
+      console.log(
+        `Property: ${cfg.propertyCode}`
+      );
+      console.log(
+        `Admin: ${cfg.adminEmail} / ${cfg.adminPassword}`
+      );
+      console.log(
+        `Front Desk: ${cfg.frontDeskEmail} / ${cfg.frontDeskPassword}`
+      );
+      console.log(
+        'Existing hotel data was NOT deleted.'
+      );
+      console.log(
+        '========================================'
+      );
+
+      process.exit(0);
+    }
+
+    console.log(
+      `Property ${cfg.propertyCode} not found.`
+    );
+
+    console.log(
+      'Fresh database detected. Creating full demo dataset...'
+    );
   }
 
   /*
@@ -124,7 +356,6 @@ const cfg = {
     await Region.create({
       organization: org._id,
       brand: brand._id,
-
       name: cfg.regionName,
       code: 'REGION',
     });
@@ -134,10 +365,8 @@ const cfg = {
       organization: org._id,
       brand: brand._id,
       region: region._id,
-
       name: cfg.propertyName,
       code: cfg.propertyCode,
-
       city: cfg.city,
       state: cfg.state,
       country: cfg.country,
@@ -147,7 +376,6 @@ const cfg = {
     await Building.create({
       organization: org._id,
       property: property._id,
-
       name: 'Main Building',
       code: 'MAIN',
     });
@@ -157,7 +385,6 @@ const cfg = {
       organization: org._id,
       property: property._id,
       building: building._id,
-
       name: 'First Floor',
       number: 1,
     });
@@ -170,41 +397,20 @@ const cfg = {
 
   await User.create({
     organization: org._id,
-
-    properties: [
-      property._id,
-    ],
-
+    properties: [property._id],
     name: 'SaaS Super Admin',
-
-    email:
-      cfg.adminEmail,
-
-    password:
-      cfg.adminPassword,
-
-    role:
-      'saas_super_admin',
+    email: cfg.adminEmail,
+    password: cfg.adminPassword,
+    role: 'saas_super_admin',
   });
 
   await User.create({
     organization: org._id,
-
-    properties: [
-      property._id,
-    ],
-
-    name:
-      'Front Desk Demo',
-
-    email:
-      cfg.frontDeskEmail,
-
-    password:
-      cfg.frontDeskPassword,
-
-    role:
-      'front_desk',
+    properties: [property._id],
+    name: 'Front Desk Demo',
+    email: cfg.frontDeskEmail,
+    password: cfg.frontDeskPassword,
+    role: 'front_desk',
   });
 
   const demoUsers = [
@@ -215,7 +421,6 @@ const cfg = {
       'housekeeping_supervisor',
       'Housekeeping',
     ],
-
     [
       'Finance Demo',
       'finance@hms.local',
@@ -223,7 +428,6 @@ const cfg = {
       'finance',
       'Finance',
     ],
-
     [
       'Revenue Demo',
       'revenue@hms.local',
@@ -231,7 +435,6 @@ const cfg = {
       'revenue_manager',
       'Revenue',
     ],
-
     [
       'Engineering Demo',
       'engineering@hms.local',
@@ -239,7 +442,6 @@ const cfg = {
       'engineering',
       'Engineering',
     ],
-
     [
       'Restaurant Demo',
       'restaurant@hms.local',
@@ -247,7 +449,6 @@ const cfg = {
       'fnb_cashier_waiter',
       'F&B',
     ],
-
     [
       'Kitchen Demo',
       'kitchen@hms.local',
@@ -255,7 +456,6 @@ const cfg = {
       'kitchen_staff',
       'Kitchen',
     ],
-
     [
       'General Manager',
       'gm@hms.local',
@@ -263,7 +463,6 @@ const cfg = {
       'general_manager',
       'Management',
     ],
-
     [
       'Sales & Events',
       'sales@hms.local',
@@ -271,7 +470,6 @@ const cfg = {
       'sales_events',
       'Sales',
     ],
-
     [
       'Cashier Demo',
       'cashier@hms.local',
@@ -279,7 +477,6 @@ const cfg = {
       'cashier',
       'Finance',
     ],
-
     [
       'System Admin',
       'system@hms.local',
@@ -299,13 +496,8 @@ const cfg = {
     ] of demoUsers
   ) {
     await User.create({
-      organization:
-        org._id,
-
-      properties: [
-        property._id,
-      ],
-
+      organization: org._id,
+      properties: [property._id],
       name,
       email,
       password,
@@ -322,24 +514,12 @@ const cfg = {
 
   const deluxe =
     await RoomType.create({
-      organization:
-        org._id,
-
-      property:
-        property._id,
-
-      name:
-        'Deluxe',
-
-      code:
-        'DLX',
-
-      baseRate:
-        4500,
-
-      maxOccupancy:
-        3,
-
+      organization: org._id,
+      property: property._id,
+      name: 'Deluxe',
+      code: 'DLX',
+      baseRate: 4500,
+      maxOccupancy: 3,
       amenities: [
         'Wi-Fi',
         'Breakfast',
@@ -351,24 +531,12 @@ const cfg = {
 
   const suite =
     await RoomType.create({
-      organization:
-        org._id,
-
-      property:
-        property._id,
-
-      name:
-        'Executive Suite',
-
-      code:
-        'STE',
-
-      baseRate:
-        8500,
-
-      maxOccupancy:
-        4,
-
+      organization: org._id,
+      property: property._id,
+      name: 'Executive Suite',
+      code: 'STE',
+      baseRate: 8500,
+      maxOccupancy: 4,
       amenities: [
         'Wi-Fi',
         'Breakfast',
@@ -379,30 +547,14 @@ const cfg = {
       ],
     });
 
-  /*
-  NEW PREMIUM SUITE
-  */
-
   const premium =
     await RoomType.create({
-      organization:
-        org._id,
-
-      property:
-        property._id,
-
-      name:
-        'Premium Suite',
-
-      code:
-        'PRM',
-
-      baseRate:
-        12500,
-
-      maxOccupancy:
-        5,
-
+      organization: org._id,
+      property: property._id,
+      name: 'Premium Suite',
+      code: 'PRM',
+      baseRate: 12500,
+      maxOccupancy: 5,
       amenities: [
         'Wi-Fi',
         'Breakfast',
@@ -423,11 +575,6 @@ const cfg = {
 
   const rooms = [];
 
-  /*
-  DELUXE
-  Rooms 101 - 105
-  */
-
   for (
     let i = 101;
     i <= 105;
@@ -435,40 +582,18 @@ const cfg = {
   ) {
     rooms.push(
       await Room.create({
-        organization:
-          org._id,
-
-        property:
-          property._id,
-
-        building:
-          building._id,
-
-        floor:
-          floor._id,
-
-        roomType:
-          deluxe._id,
-
-        number:
-          String(i),
-
-        bedType:
-          'King',
-
-        capacity:
-          3,
-
-        status:
-          'Vacant Clean',
+        organization: org._id,
+        property: property._id,
+        building: building._id,
+        floor: floor._id,
+        roomType: deluxe._id,
+        number: String(i),
+        bedType: 'King',
+        capacity: 3,
+        status: 'Vacant Clean',
       })
     );
   }
-
-  /*
-  EXECUTIVE SUITE
-  Rooms 106 - 109
-  */
 
   for (
     let i = 106;
@@ -477,40 +602,18 @@ const cfg = {
   ) {
     rooms.push(
       await Room.create({
-        organization:
-          org._id,
-
-        property:
-          property._id,
-
-        building:
-          building._id,
-
-        floor:
-          floor._id,
-
-        roomType:
-          suite._id,
-
-        number:
-          String(i),
-
-        bedType:
-          'King',
-
-        capacity:
-          4,
-
-        status:
-          'Vacant Clean',
+        organization: org._id,
+        property: property._id,
+        building: building._id,
+        floor: floor._id,
+        roomType: suite._id,
+        number: String(i),
+        bedType: 'King',
+        capacity: 4,
+        status: 'Vacant Clean',
       })
     );
   }
-
-  /*
-  PREMIUM SUITE
-  Rooms 110 - 112
-  */
 
   for (
     let i = 110;
@@ -519,32 +622,15 @@ const cfg = {
   ) {
     rooms.push(
       await Room.create({
-        organization:
-          org._id,
-
-        property:
-          property._id,
-
-        building:
-          building._id,
-
-        floor:
-          floor._id,
-
-        roomType:
-          premium._id,
-
-        number:
-          String(i),
-
-        bedType:
-          'Luxury King',
-
-        capacity:
-          5,
-
-        status:
-          'Vacant Clean',
+        organization: org._id,
+        property: property._id,
+        building: building._id,
+        floor: floor._id,
+        roomType: premium._id,
+        number: String(i),
+        bedType: 'Luxury King',
+        capacity: 5,
+        status: 'Vacant Clean',
       })
     );
   }
@@ -557,28 +643,14 @@ const cfg = {
 
   const guest =
     await Guest.create({
-      organization:
-        org._id,
-
-      property:
-        property._id,
-
-      fullName:
-        'Demo Guest',
-
-      email:
-        'guest@example.com',
-
-      phone:
-        '9999999999',
-
-      tags: [
-        'VIP',
-      ],
-
+      organization: org._id,
+      property: property._id,
+      fullName: 'Demo Guest',
+      email: 'guest@example.com',
+      phone: '9999999999',
+      tags: ['VIP'],
       preferences: {
-        food:
-          'Vegetarian',
+        food: 'Vegetarian',
       },
     });
 
@@ -588,8 +660,7 @@ const cfg = {
   ============================================================
   */
 
-  const cin =
-    new Date();
+  const cin = new Date();
 
   cin.setDate(
     cin.getDate() + 1
@@ -611,20 +682,13 @@ const cfg = {
 
   const reservation =
     await Reservation.create({
-      organization:
-        org._id,
-
-      property:
-        property._id,
+      organization: org._id,
+      property: property._id,
 
       confirmationNumber:
-        `${
-          cfg.bookingPrefix
-        }-${
-          uuid()
-            .slice(0, 8)
-            .toUpperCase()
-        }`,
+        `${cfg.bookingPrefix}-${uuid()
+          .slice(0, 8)
+          .toUpperCase()}`,
 
       guest:
         guest._id,
@@ -691,8 +755,7 @@ const cfg = {
       guest._id,
 
     currency:
-      process.env
-        .DEFAULT_CURRENCY ||
+      process.env.DEFAULT_CURRENCY ||
       'INR',
 
     items: [
@@ -965,7 +1028,7 @@ const cfg = {
 
   /*
   ============================================================
-  HOTEL PACKAGE
+  HOTEL PACKAGES
   ============================================================
   */
 
@@ -1009,10 +1072,6 @@ const cfg = {
     active:
       true,
   });
-
-  /*
-  PREMIUM SUITE PACKAGE
-  */
 
   await ent[
     'hotel-packages'
@@ -1442,6 +1501,7 @@ const cfg = {
   );
 
   console.log('');
+
   console.log(
     `Admin: ${cfg.adminEmail} / ${cfg.adminPassword}`
   );
@@ -1485,6 +1545,5 @@ const cfg = {
   process.exit(0);
 })().catch((e) => {
   console.error(e);
-
   process.exit(1);
 });
